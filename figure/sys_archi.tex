@@ -1,0 +1,10 @@
+\begin{tikzpicture}[node distance=2cm]
+    \node (view) [process] {网站视图};
+    \node (controller) [process, right of=view, xshift=3cm] {网站控制};
+    \node (qprocess) [process, below of=controller] {查询预处理};
+    \node (qtokenizer) [process, below of=qprocess] {查询解析};
+    \node (database) [process, right of=controller, xshift=3cm] {数据库};
+    \node (handler) [process, below of=database] {文档导入处理};
+    \node (dtokenizer) [process, below of=handler] {文档分析};
+    \node (index) [process, below of=qtokenizer, xshift=2cm] {索引服务器};
+\end{tikzpicture}

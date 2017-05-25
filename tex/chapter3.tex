@@ -4,7 +4,119 @@
 %%==================================================
 
 %\bibliographystyle{sjtu2}%[此处用于每章都生产参考文献]
-\chapter{论文数据库大规模数据的索引方式}
+\chapter{大规模数据的索引建立}
 \label{chap:c3}
 
-这是研究背景
+在系统使用的完整的数据库中，论文的总量超过一亿两千万，因此索引建立的速度将会是索引建立方式的主要考量因素。由于论文数据库的内容实际上在不断更新，随着时间的推移，数据库中会添加最新的论文，现有论文的被引用量等信息也会改变，如果建立一次索引的时间过长，将会大大降低该系统的实时性与实用性。考虑到如果要在6小时内建立完整的索引，每秒导入条目的数量必须要大于5500条，这对建立索引的方法就有了很高的要求。经过多种方法的尝试后，本论文最终用文件导入法代替了之前的数据库导入法，成功将索引条目导入的速度从最初的每秒30条左右增加到了每秒6000条左右，成功做到了索引的实时建立与更新。
+
+下面通过介绍并分析新旧两种导入方式，以解释针对这一问题的处理方法：
+\section{数据库导入法}
+数据库导入法是向Solr导入数据并建立索引的一种较为直观的方式，在Solr中的DataImportHandler包中有该方式的相关接口。由于数据源是MySQL数据库，因此导入过程采用JAVA提供的MySQL库中的jdbc.driver包进行驱动。
+
+在本系统中，作为数据源的数据库结构为：
+
+（图片待补）
+
+因此，正如上一章中提到的，我们只要针对DataImportHandler包设计合适的db-data-config.xml文件，就可以实现数据库导入索引的操作。该文件的实现方式如下：
+\begin{lstlisting}[caption={从数据库中导入索引的db-data-config.xml}, label=dbtoindex, escapeinside="", numbers=none]
+<dataConfig>
+    <dataSource type="JdbcDataSource"
+      driver="com.mysql.jdbc.Driver"
+      url="jdbc:mysql://*.*.*.*:**/database"
+      user="******"
+      password="******" />
+    <document>
+        <entity name="Papers" query="select * from Papers">
+            <field column="PaperID" name="id" />
+            <field column="OriginalPaperTitle" name="OriginalPaperTitle" />
+            <field column="OriginalVenueName" name="OriginalVenueName" />
+            <field column="PaperRank" name="PaperRank" />
+            <field column="PaperPublishYear" name="PaperPublishYear" />
+            <field column="ConferenceSeriesIDMappedToVenueName" name="ConferenceSeriesID" />
+            <field column="JournalIDMappedToVenueName" name="JournalID" />
+            <entity name="Information"
+                    query="select * from PaperAuthorAffiliations
+                    where PaperID='\$\{Papers.PaperID\}'">
+                <field name="AuthorID" column="AuthorID" />
+                <entity name="Authors"
+                  query="select AuthorName from Authors
+                  where AuthorID = '\$\{Information.AuthorID\}'">
+                    <field name="AuthorName" column="AuthorName" />
+                </entity>
+            </entity>
+            <entity name="Conference"
+                    query="select ShortName from ConferenceSeries
+                    where ConferenceSeriesID = '\$\{Papers.ConferenceSeriesIDMappedToVenueName\}'">
+                <field name="ConferenceShortName" column="ShortName" />
+            </entity>
+            <entity name="Keywords"
+                    query="select * from PaperKeywords
+                    where PaperID='\$\{Papers.PaperID\}'">
+                <field name="KeywordName" column="KeywordName" />
+                <field name="KeywordID" column="FieldOfStudyIDMappedToKeyword" />
+                <entity name="FieldsOfStudy"
+                        query="select FieldsOfStudyName from FieldsOfStudy
+                        where FieldsOfStudyID = '\$\{Keywords.FieldOfStudyIDMappedToKeyword\}'">
+                    <field name="FieldsOfStudyName" column="FieldsOfStudyName" />
+                </entity>
+            </entity>
+            <entity name="PaperReferencesCount2"
+                    query="select PaperReferenceCount from PaperReferencesCount2
+                    where PaperReferenceID = '\$\{Papers.PaperID\}'">
+                <field name="PaperReferenceCount" column="PaperReferenceCount" />
+            </entity>
+        </entity>
+    </document>
+</dataConfig>
+
+</requestHandler>
+\end{lstlisting}
+
+不幸的是，用这种导入方法从来都没有成功地导入过一次完整的数据库。因为数据导入速度过慢，对于1.2亿条的数据，系统预计的导入时间超过了30天。而在服务器上将如此占用资源，尤其是占用服务器数据库资源的进程连续运行30天是不可容忍的。由上一章可知，对于每一篇文章，需要索引的域共有14个，共涉及到数据库的七张表。由于该方法的索引建立的过程是逐条建立，而不是按表建立，因此需要通过表的连接（JOIN）方式将多张表的内容整合起来，再导入索引中。要整合得到所需的全部14个域，其中作者ID、会议简称、关键词名称、关键词ID需要进行一次表的连接操作；作者姓名、研究领域名称需要进行两次表的连接操作。由于大部分数据库表的规模很大，进行表的连接操作将会花费大量的时间。在实际操作中，使用该方法虽然可以完整建立功能完备索引，但是索引的速度只有每秒30条左右，建立一次索引的时间将会超过30天。考虑到服务器资源的限制与索引建立方式的可操作性，我们不得不抛弃这种方法，而寻找其它的解决方式。
+
+\section{文件导入法}
+在数据库导入法暴露了其致命缺陷之后，我尝试了很多改进方式，然而都没有从根本上解决这一问题。究其原因，是数据库表本身连接运算的效率过低导致的。在理论上，计算笛卡尔积的连接操作的复杂度达到了O(M*N)，经过SQL内部优化的JOIN操作复杂度也在O(M+N)之上。由于这一部分涉及到大量硬盘读写，而硬盘的读写速度远远慢于内存与寄存器内的运算速度，这一典型的I/O密集型(I/O bound)工作的工作效率会被硬盘的读取速度大大限制。无论如何优化算法，或是给以程序更多的内存，只要读入数据的方式不改变，运行的速度就不会有本质上的提高。
+
+弄清了问题的本质以后，改进该部分的重点就到了如何减少硬盘的读写上。其中一个可行的方式，也是论文中采用的方式，就是完全抛弃调用数据库操作处理数据，而将全部的数据操作都搬到读入内存的哈希表中进行，我把这种方法叫做文件导入法。该方法的核心是先将数据库中的内容处理为XML格式的标记语言文件，再用该文件作为数据源建立索引。由于处理得到的文件中每条论文信息可以被逐条导入，因而这种方法完全避免了I/O密集的数据库操作，经过测试，使用该方法的导入速度相比数据库导入法提升了100-200倍，使大规模索引快速建立这一目标得到了实现。
+
+文件导入法的算法如下：
+
+***
+
+在按此方法导入了数据之后，我们得到的transed\_all.xml文件便以逐条呈现的形式存储了所有需要被索引的信息。此时我们以该xml文件为数据源进行索引创建的时候，就可以避免耗时的数据库读取与链接操作，而可以通过顺序读文件的方法完成索引的简历。此时，db-data-config.xml的配置也会变得简单很多。注意，此时要以流形式(stream = true)导入数据，可以让系统逐行读取目标文件，避免文件过大导致资源不足。
+
+\begin{lstlisting}[caption={从文件导入索引的db-data-config.xml}, label=filetoindex, escapeinside="", numbers=none]
+<dataConfig>
+	 <dataSource encoding="UTF-8" type="FileDataSource" />
+	 <document>
+	    <entity
+	        name="paper"
+			processor="XPathEntityProcessor"
+			forEach="/root/paper"
+			url="/foo/bar/transed\_all.xml"
+			stream="true"
+			>
+		<field column="id" xpath="/root/paper/PaperID" />
+		<field column="OriginalPaperTitle" xpath="/root/paper/OriginalPaperTitle" />
+		<field column="OriginalVenueName" xpath="/root/paper/OriginalVenueName" />
+		<field column="PaperRank" xpath="/root/paper/PaperRank" />
+		<field column="PaperReferenceCount" xpath="/root/paper/CitationCount" />
+		<field column="PaperPublishYear" xpath="/root/paper/PaperPublishYear" />
+		<field column="ConferenceSeriesID" xpath="/root/paper/ConferenceSeriesIDMappedToVenueName" />
+		<field column="JournalID" xpath="/root/paper/JournalIDMappedToVenueName" />
+		<field column="ConferenceShortName" xpath="/root/paper/ConferenceShortName" />
+		<field column="AuthorID" xpath="/root/paper/Author/AuthorID" />
+		<field column="AuthorName" xpath="/root/paper/Author/AuthorName" />
+		<field column="AuthorSequenceOrder" xpath="/root/paper/Author/AuthorSequenceOrder" />
+		<field column="FieldsOfStudyName" xpath="/root/paper/Keyword/FieldsOfStudyName" />
+		<field column="KeywordID" xpath="/root/paper/Keyword/KeywordID" />
+		<field column="KeywordName" xpath="/root/paper/Keyword/KeywordName" />
+    </entity>
+    </document>
+</dataConfig>
+</requestHandler>
+\end{lstlisting}
+
+该导入配置文件比数据库导入法的配置文件要简单很多。这是因为此时的需要导入的内容都在xml树的同一个根节点下平铺展开，所以只要顺序读入该文件，以此读入xml树并获取对应域的内容，就可以完成文档的导入工作。
+
+这是一个典型的用空间换时间的算法，其本质类似于将硬盘中的内容映射到内存中，再利用内存比硬盘高得多的读写速度完成任务。这种空间换时间以提高效率的方法在本平台中也有许多其它的运用场景。例如在索引的构建中，如果将60G的索引文件映射到内存中，并直接在内存上执行索引查询请求，会使查询的速度相比于将索引存放于文件中大大提高。但是在服务器中，内存空间是一种比磁盘空间宝贵的多的资源，长时间占用60G-120G（60G为单机版索引总大小，120G为分布式索引总大小）的内存资源也是一项很大的花费，因此这种方法的使用需要经过慎重考虑。
