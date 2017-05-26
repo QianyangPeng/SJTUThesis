@@ -1,0 +1,97 @@
+%# -*- coding: utf-8-unix -*-
+\chapter{搜索平台的启动和维护命令}
+
+\section{单机版架构}
+\subsection{启动服务}
+单机版服务的启动可以直接使用example中的data import handler示例，启动方式为：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd solr-6.5.0
+bin/solr -e dih -m 20g
+\end{lstlisting}
+
+其中-e dih指启动data import handler这一example，-m为JAVA虚拟机分配内存。启动后，基本功能都已经配置完成，接下来可以从索引结构设计开始进行进一步配置。
+
+当然，用示例启动服务器这一行为并不优雅，我们可以用下面的指令启动一个正式的服务器：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd solr-6.5.0
+bin/solr start -h host -p port -d dir -m memory
+\end{lstlisting}
+
+用这个指令，我们可以指定host地址，端口地址和服务器文件地址，并开启一个新的未经过配置的服务。这时我们需要从头配置所有的内容，参见第二章中平台配置小节。
+
+\subsection{关闭服务}
+关闭某个端口的服务，可以用指令：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd solr-6.5.0
+bin/solr stop -p port
+\end{lstlisting}
+
+关闭本地所有端口的服务，可以用指令：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd solr-6.5.0
+bin/solr stop -all
+\end{lstlisting}
+
+\section{分布式架构}
+\subsection{启动服务}
+分布式架构中首先需要启动Zookeeper服务：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd zookeeper-3.4.10
+bin/zkServer.sh start
+\end{lstlisting}
+
+注意服务被启动到了哪个端口，这个端口号在conf/zoo.cfg中指定，之后需要再次用到，此处假设为1234端口。启动zkCli.sh并创建一个名为acemap的新节点：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd zookeeper-3.4.10
+bin/zkCli.sh create nodename
+\end{lstlisting}
+
+分别在两台服务器上以云模式启动Solr服务：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+On Solr Server1:
+cd solr-6.5.0
+bin/solr start -h s1host -cloud -p s1port -z zkhost:1234/nodename -m 20g
+On Solr Server2:
+cd solr-6.5.0
+bin/solr start -h s2host -cloud -p s2port -z zkhost:1234/nodename -m 20g
+\end{lstlisting}
+
+其中s1host与s2host是两台服务器的主机地址，s1port和s2port是两台服务器希望启动服务的端口号，zkhost是zookeeper服务的主机地址，1234为之前指定的端口号，nodename为之前指定的节点名称。
+
+当服务因故退出或计算机重启后，使用以上指令可以使服务重新注册回云端。
+
+管理云平台索引集合：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd solr-6.5.0
+增加collection：bin/solr create -c collectionname -shards 2 -replicationFactor 2
+删除collection：bin/solr delete -c collectionname
+\end{lstlisting}
+
+其中-shards表示索引分片数目，-replicationFactor表示分片备份数目，一般来说，这两个值都与分布式服务器的数目相同。
+
+更新配置文件：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+在任何一台运行了Solr服务的计算机上：
+cd solr-6.5.0/server/scripts/cloud-scripts
+./zkcli.sh -z zkhost:1234/nodename -cmd upconfig -confdir configdirectory -confname configname
+\end{lstlisting}
+
+其中configdirectory为存放配置文件的本地目录，configname为节点名字（一般与collection名字相同），此命令会将配置文件传到Zookeeper的名为nodename的节点上。
+
+更新配置文件后，需要重新加载集合：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+在任何一台运行了Solr服务的计算机上：
+http://solrhost:port/solr/admin/collections?action=RELOAD&name=collectionname
+\end{lstlisting}
+
+关闭Solr服务：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd solr-6.5.0
+bin/solr stop -p port
+\end{lstlisting}
+
+关闭Zookeeper服务：
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cd zookeeper-3.4.10
+bin/zkServer.sh stop
+\end{lstlisting}
