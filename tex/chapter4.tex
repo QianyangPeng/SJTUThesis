@@ -12,7 +12,7 @@
 \begin{figure}[!htp]
     \centering
     \resizebox{7cm}{!}{\input{figure/page_stru.tex}}
-    \bicaption[fig:websitepro]{网页处理流程图}{网页处理流程图}{Fig}{Website Handler Procedure}
+    \bicaption[fig:website]{网页处理流程图}{网页处理流程图}{Fig}{Website Handler Procedure}
 \end{figure}
 
 当用户输入被确认合法（即去除特殊符号与停用词后不为空字符串）后，用户输入被封装到传入solr服务器的html请求的query字段中，并访问Solr服务器以寻求其答复。发送给Solr的HTTP请求基本格式如下：
@@ -33,18 +33,18 @@ http://***.***.***.***:****/solr/collection/select?indent=on\&q=content\&wt=json
 如果Solr服务器正确响应，对于以上请求将会以Http Response的形式返回一个.json格式的文件。该文件中即包含了网页需要显示的所有信息。该文件的结构如下：
 
 \begin{lstlisting}[caption={返回文件格式}, label=returnfileformat, escapeinside="", numbers=none]
-\{
-  "responseHeader":\{
+{
+  "responseHeader":{
     "status":0,
     "QTime":1442,
-    "params":\{
+    "params":{
       "q":"content",
       "indent":"on",
       "page":"2",
       "wt":"json",
-      "facet":"false"\}\},
-  "response":\{"numFound":332899,"start":0,"docs":[
-      \{
+      "facet":"false"}},
+  "response":{"numFound":332899,"start":0,"docs":[
+      {
         "PaperReferenceCount":0,
         "ConferenceShortName":"",
         "\_entext\_":["",
@@ -61,13 +61,13 @@ http://***.***.***.***:****/solr/collection/select?indent=on\&q=content\&wt=json
         "AuthorSequenceOrder":[1],
         "PaperPublishYear":2015,
         "id":"5F993E0C",
-        "\_version\_":1554052763125547020\},
+        "\_version\_":1554052763125547020},
     ......],
-     "highlighting":\{
-    "5F993E0C":\{
-      "OriginalPaperTitle":["<font color=\#196600>Contents</font>-May 2015"]\},
+     "highlighting":{
+    "5F993E0C":{
+      "OriginalPaperTitle":["<font color=\#196600>Contents</font>-May 2015"]},
     ......
-     \}\}\}
+     }}}
 \end{lstlisting}
 
 在该响应文件中，responseheader里显示了我们查询的参数，response中显示了响应的内容。其中，response中的docs列表中将会返回在该次查询中返回的十条结果，我们只要解析该json文件，并把对应字段的内容加上对应字体的html标签在返回页面显示，就实现了搜索结果的展示功能。除了基本内容之外，网页还有结果高亮和结果统计两个扩展功能，进一步扩展了网页的显示效果。
@@ -90,10 +90,10 @@ http://***.***.***.***:****/solr/collection/select?indent=on\&q=content\&wt=json
 如果在html请求中将facet=false改为facet=true，即可打开结果统计功能。此时，服务器返回的json文件中会增加一个facet键对应的内容：
 
 \begin{lstlisting}[caption={结果统计}, label=facet, escapeinside="", numbers=none]
-\{
-"facet\_counts":\{
-    "facet\_queries":\{\},
-    "facet\_fields":\{
+{
+"facet\_counts":{
+    "facet\_queries":{},
+    "facet\_fields":{
       "PaperPublishYear":[
         "2013",23649,
         "2014",22127,
@@ -105,11 +105,11 @@ http://***.***.***.***:****/solr/collection/select?indent=on\&q=content\&wt=json
         "09AEBB9C",4648,
         "200524E7",4165,
         .....],
-      .....\},
-    "facet\_ranges":\{\},
-    "facet\_intervals":\{\},
-    "facet\_heatmaps":\{\}\}
-\}
+      .....},
+    "facet\_ranges":{},
+    "facet\_intervals":{},
+    "facet\_heatmaps":{}}
+}
 \end{lstlisting}
 
 如上例所示，由于统计功能的相关参数都在默认配置文件中指定，因此facet\_queries等域的内容均为空。同时，facet\_fields的内容显示了与该关键词相关的论文的分布情况，例如出版于2013年的论文的数量为23649篇，2014年的数量为22127篇等。
