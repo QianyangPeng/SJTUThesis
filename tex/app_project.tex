@@ -1,0 +1,30 @@
+%# -*- coding: utf-8-unix -*-
+\chapter{索引文件映射到内存的方法}
+
+\section{定位索引文件位置}
+首先我们需要知道索引文件存放的位置。一般来说，Solr的索引文件存放于文件目录的./data/index目录下
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+Index: /home/path/to/solr/collection/data/index
+\end{lstlisting}
+
+\section{备份索引文件夹}
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cp ./index ./index2
+\end{lstlisting}
+
+\section{将索引文件夹挂载到内存上}
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+mount -t tmpfs -o size=90g tmpfs ./index
+\end{lstlisting}
+该操作会花费90G内存空间，如果计算机内存空间不足，可酌情减少。不过，该值太小会导致solr服务无法启动。
+
+\section{将索引文件拷贝回目标目录}
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+cp -Rf ./index2/* ./index
+\end{lstlisting}
+注意不要用mv指令直接剪切并粘贴文件。因为内存中保存的文件不稳定，所以请保留一份硬盘备份。
+
+\section{按正常方式启动Solr服务}
+\begin{lstlisting}[basicstyle=\small\ttfamily, numbers=none]
+./bin/solr start
+\end{lstlisting}
